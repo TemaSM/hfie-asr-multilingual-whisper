@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def chunk_audio_with_duration(
-        audio: np.ndarray, maximum_duration_sec: int, sampling_rate: int
+    audio: np.ndarray, maximum_duration_sec: int, sampling_rate: int
 ) -> Sequence[np.ndarray]:
     """
     Chunk a mono audio timeseries so that each chunk is as long as `maximum_duration_sec`.
@@ -62,10 +62,10 @@ def compression_ratio(text: str) -> float:
 
 
 def create_prompt(
-        audio: np.ndarray,
-        sampling_rate: int,
-        language: int,
-        timestamp_marker: int,
+    audio: np.ndarray,
+    sampling_rate: int,
+    language: int,
+    timestamp_marker: int,
 ):
     """
     Generate the right prompt with the specific parameters to submit for inference over Whisper
@@ -92,14 +92,14 @@ def create_prompt(
 
 
 def create_params(
-        max_tokens: int, temperature: float, is_verbose: bool
+    max_tokens: int, temperature: float, is_verbose: bool
 ) -> SamplingParams:
     """
-
-    :param max_tokens:
-    :param temperature:
-    :param is_verbose:
-    :return:
+    Create sampling parameters to submit for inference through vLLM `generate`
+    :param max_tokens: Maximum number of tokens to generate
+    :param temperature: Sampling temperature for the softmax
+    :param is_verbose: Flag indicating whether the response is required to contains verbose output
+    :return: `SamplingParams`
     """
     return SamplingParams.from_optional(
         # output_kind=RequestOutputKind.FINAL_ONLY,  # Change if streaming
@@ -107,7 +107,7 @@ def create_params(
         skip_special_tokens=False,
         detokenize=False,
         temperature=temperature,
-        logprobs=100 if is_verbose else None,
+        logprobs=1 if is_verbose else None,
     )
 
 
@@ -122,13 +122,23 @@ def get_avg_logprob(logprobs: "SampleLogprobs") -> float:
 
 
 def process_chunk(
-        tokenizer: "PreTrainedTokenizer",
-        ids: np.ndarray,
-        logprobs: "SampleLogprobs",
-        request: TranscriptionRequest,
-        segment_offset: int,
-        timestamp_offset: int,
+    tokenizer: "PreTrainedTokenizer",
+    ids: np.ndarray,
+    logprobs: "SampleLogprobs",
+    request: TranscriptionRequest,
+    segment_offset: int,
+    timestamp_offset: int,
 ) -> Generator:
+    """
+    Decode a single transcribed audio chunk and generates all the segments associated
+    :param tokenizer:
+    :param ids:
+    :param logprobs:
+    :param request:
+    :param segment_offset:
+    :param timestamp_offset:
+    :return:
+    """
     # Some constants
     k_timestamp_token = lru_cache(tokenizer.convert_tokens_to_ids)(f"<|0.00|>")
 
@@ -187,10 +197,17 @@ def process_chunk(
 
 
 def process_chunks(
-        tokenizer: "PreTrainedTokenizer",
-        chunks: List["RequestOutput"],
-        request: TranscriptionRequest,
+    tokenizer: "PreTrainedTokenizer",
+    chunks: List["RequestOutput"],
+    request: TranscriptionRequest,
 ) -> Tuple[List[Segment], str]:
+    """
+    Iterate over all the audio chunk's outputs and consolidates outputs as segment(s) whether the response is verbose or not
+    :param tokenizer: The tokenizer to use for decoding tokens
+    :param chunks: Transcribed audio chunks
+    :param request: Received request from the user
+    :return: `Tuple[List[Segment], str]` holding all the consolidated segments along with full transcribed text
+    """
     # k_nospeech_token = tokenizer.convert_tokens_to_ids("<|nospeech|>")
     # k_sot_token = tokenizer.convert_tokens_to_ids("<|startoftranscript|>")
     materialized_segments, materialized_segments_tokens_acc = [], []
@@ -205,7 +222,7 @@ def process_chunks(
         logprobs = generation.logprobs
 
         for segment, _is_continuation in process_chunk(
-                tokenizer, ids, logprobs, request, segment_offset, time_offset
+            tokenizer, ids, logprobs, request, segment_offset, time_offset
         ):
             materialized_segments.append(segment)
 
@@ -237,19 +254,19 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                 device="auto",
                 dtype="bfloat16",
                 kv_cache_dtype="fp8",
-                enforce_eager=True,
+                enforce_eager=False,
                 enable_prefix_caching=True,
-                max_logprobs=100,  # TODO(mfuntowicz) : Set from config?
+                max_logprobs=1,  # TODO(mfuntowicz) : Set from config?
             )
         )
 
     async def transcribe(
-            self,
-            ctx: Context,
-            request: TranscriptionRequest,
-            tokenizer: "PreTrainedTokenizer",
-            audio_chunks: Iterable[np.ndarray],
-            params: "SamplingParams"
+        self,
+        ctx: Context,
+        request: TranscriptionRequest,
+        tokenizer: "PreTrainedTokenizer",
+        audio_chunks: Iterable[np.ndarray],
+        params: "SamplingParams",
     ) -> (List[Segment], str):
         async def __agenerate__(request_id: str, prompt, params):
             """
@@ -267,8 +284,6 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
         # Wrap tokenizer results with LRU cache to avoid vocabulary lookup
         convert_tokens_to_ids = lru_cache(tokenizer.convert_tokens_to_ids)
 
-        # f"<|{timestamp_marker if is_verbose_response else 0:.2f}|>"
-
         coro_handles = []
         for audio_chunk_id, audio_chunk in enumerate(audio_chunks):
             # Generate suffixed request-id to submit and identify through vLLM scheduler
@@ -280,11 +295,17 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
             # Compute initial prompt for the segment
             is_verbose = request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
             language = convert_tokens_to_ids(f"<|{request.language}|>")
-            timestamp = convert_tokens_to_ids(f"<|0.00|>" if is_verbose else '<|notimestamps|>')
-            prompt = create_prompt(audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, language, timestamp)
+            timestamp = convert_tokens_to_ids(
+                f"<|0.00|>" if is_verbose else "<|notimestamps|>"
+            )
+            prompt = create_prompt(
+                audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, language, timestamp
+            )
 
             # Submit the task
-            coro_handles += [asyncio.create_task(__agenerate__(request_id, prompt, params))]
+            coro_handles += [
+                asyncio.create_task(__agenerate__(request_id, prompt, params))
+            ]
 
         # Wait for all the segment to complete
         text_chunks = await asyncio.gather(*coro_handles)
@@ -296,14 +317,14 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
         return segments, text
 
     async def __call__(
-            self, request: TranscriptionRequest, ctx: Context
+        self, request: TranscriptionRequest, ctx: Context
     ) -> TranscriptionResponse:
         with logger.contextualize(request_id=ctx.request_id):
             with memoryview(request) as audio:
 
                 # Check if we need to enable the verbose path
                 is_verbose = (
-                        request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
+                    request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
                 )
 
                 # Retrieve the tokenizer and model config asynchronously while we decode audio
@@ -329,7 +350,9 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                 )
 
                 # Submit audio pieces to the batcher and gather them all
-                segments, text = await self.transcribe(ctx, request, await tokenizer, audio_chunks, params)
+                segments, text = await self.transcribe(
+                    ctx, request, await tokenizer, audio_chunks, params
+                )
 
                 match request.response_kind:
                     case TranscriptionResponseKind.VERBOSE_JSON:
