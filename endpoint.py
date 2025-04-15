@@ -164,7 +164,7 @@ def process_chunk(
                 segment_text = tokenizer.decode(segment_ids)
 
                 # Compute the avg_logprob
-                avg_logprob = get_avg_logprob(logprobs)
+                avg_logprob = get_avg_logprob(logprobs) if logprobs else float("nan")
 
                 # no-speech logprob
                 # no_speech_token_id = lru_cache(tokenizer.convert_tokens_to_ids("<|nospeech|>"))
@@ -243,7 +243,7 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                 device="auto",
                 dtype="bfloat16",
                 kv_cache_dtype="fp8",
-                enforce_eager=False,
+                enforce_eager=True,
                 enable_prefix_caching=True,
                 max_logprobs=100,  # TODO(mfuntowicz) : Set from config?
             )
@@ -257,29 +257,30 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
             audio_chunks: Iterable[np.ndarray],
             params: "SamplingParams"
     ) -> (List[Segment], str):
+        async def __agenerate__(request_id: str, prompt, params):
+            # Submit for inference on the segment & keep track of the background task
+            async for step in self._engine.generate(prompt, params, request_id):
+                pass
+            return step
 
-        async def _schedule():
-            for audio_chunk_id, audio_chunk in enumerate(audio_chunks):
-                # Generate suffixed request-id to submit and identify through vLLM scheduler
-                request_id = f"{ctx.request_id}-{audio_chunk_id}"
+        coro_handles = []
+        for audio_chunk_id, audio_chunk in enumerate(audio_chunks):
+            # Generate suffixed request-id to submit and identify through vLLM scheduler
+            request_id = f"{ctx.request_id}-{audio_chunk_id}"
 
-                # Compute the starting time of the chunk as each consecutive chunk represents 30s worth of audio
-                timestamp = audio_chunk_id * WhisperHandler.WHISPER_SEGMENT_DURATION_SEC
+            # Compute the starting time of the chunk as each consecutive chunk represents 30s worth of audio
+            timestamp = audio_chunk_id * WhisperHandler.WHISPER_SEGMENT_DURATION_SEC
 
-                # Compute initial prompt for the segment
-                prompt = create_prompt(audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, timestamp, request)
+            # Compute initial prompt for the segment
+            prompt = create_prompt(audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, timestamp, request)
 
-                # Submit for inference on the segment & keep track of the background task
-                async for step in self._engine.generate(prompt, params, request_id):
-                    pass
-
-                yield step
+            # Submit the task
+            coro_handles += [asyncio.create_task(__agenerate__(request_id, prompt, params))]
 
         # Wait for all the segment to complete
-        text_chunks = await asyncio.gather(*[handle async for handle in _schedule()])
+        text_chunks = await asyncio.gather(*coro_handles)
 
         # if not is_cancelled.cancel_called:
-        tokenizer = await tokenizer
         segments, text = await asyncio.get_event_loop().run_in_executor(
             None, process_chunks, tokenizer, text_chunks, request
         )
@@ -296,6 +297,7 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                         request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
                 )
 
+                # Retrieve the tokenizer and model config asynchronously while we decode audio
                 tokenizer = asyncio.create_task(self._engine.get_tokenizer())
                 model_config = asyncio.create_task(self._engine.get_model_config())
 
