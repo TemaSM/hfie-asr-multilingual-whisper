@@ -23,6 +23,39 @@ which you can query using the `OpenAi` Libraries or directly through `cURL` for 
 | /api/v1/audio/transcriptions | Transcription endpoint to interact with the model |
 | /docs                        | Visual documentation                              | 
 
+## Getting started
+
+- **Getting text output from audio file**
+
+```bash
+curl http://localhost:8000/api/v1/audio/transcriptions \
+  --request POST \
+  --header 'Content-Type: multipart/form-data' \
+  -F file=@</path/to/audio/file> \
+  -F "response_format": "text"
+```
+
+- **Getting JSON output from audio file**
+
+```bash
+curl http://localhost:8000/api/v1/audio/transcriptions \
+  --request POST \
+  --header 'Content-Type: multipart/form-data' \
+  -F file=@</path/to/audio/file> \
+  -F "response_format": "json"
+```
+
+- **Getting segmented JSON output from audio file**
+  
+```bash
+curl http://localhost:8000/api/v1/audio/transcriptions \
+  --request POST \
+  --header 'Content-Type: multipart/form-data' \
+  -F file=@</path/to/audio/file> \
+  -F "response_format": "verbose_json"
+```
+
+
 ## Specifications
 
 | spec               | value                 | description                                                                                                |
@@ -33,3 +66,6 @@ which you can query using the `OpenAi` Libraries or directly through `cURL` for 
 | KV cache data type | `float8` (e4m3)       | Key-Value cache is stored on the GPU using `float8` (`float8_e4m3`) precision to save space                |
 | PyTorch Compile    | ✅                    | Enable the use of `torch.compile` to further optimize model's execution with more optimizations            |
 | CUDA Graphs        | ✅                    | Enable the use of so called "[CUDA Graphs](https://developer.nvidia.com/blog/cuda-graphs/)" to reduce overhead executing GPU computations | 
+
+
+
