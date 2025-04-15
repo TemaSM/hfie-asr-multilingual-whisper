@@ -19,7 +19,7 @@ which you can query using the `OpenAi` Libraries or directly through `cURL` for 
 
 ## Available Routes
 | path                         |        description                                |
-|:----------------------------:|:-------------------------------------------------:|
+|:-----------------------------|:--------------------------------------------------|
 | /api/v1/audio/transcriptions | Transcription endpoint to interact with the model |
 | /docs                        | Visual documentation                              | 
 
