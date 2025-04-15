@@ -24,8 +24,12 @@ which you can query using the `OpenAi` Libraries or directly through `cURL` for 
 | /docs                        | Visual documentation                              | 
 
 ## Specifications
-- Inference engine: vLLM
-- Computation data type: `bfloat16`
-- KV cache data type: `float8`
-- PyTorch Compile: 🟢
-- CUDA Graphs:     🟢
+
+| spec               | value                 | description                                                                                                |
+|:------------------ |:---------------------:|:-----------------------------------------------------------------------------------------------------------|
+| Engine             | vLLM (v0.8.3)         | Underlying inference engine leverages [vLLM](https://docs.vllm.ai/en/latest/)                              |
+| Hardware           | GPU (Ada Lovelace)    | Requires the target endpoint to run over NVIDIA GPUs with at least compute capabilities 8.9 (Ada Lovelace) |
+| Compute data type  | `bfloat16`            | Computations (matmuls, norms, etc.) are done using `bfloat16` precision                                    |
+| KV cache data type | `float8` (e4m3)       | Key-Value cache is stored on the GPU using `float8` (`float8_e4m3`) precision to save space                |
+| PyTorch Compile    | ✅                    | Enable the use of `torch.compile` to further optimize model's execution with more optimizations            |
+| CUDA Graphs        | ✅                    | Enable the use of so called "[CUDA Graphs](https://developer.nvidia.com/blog/cuda-graphs/)" to reduce overhead executing GPU computations | 
