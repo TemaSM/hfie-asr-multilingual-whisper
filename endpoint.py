@@ -64,34 +64,28 @@ def compression_ratio(text: str) -> float:
 def create_prompt(
         audio: np.ndarray,
         sampling_rate: int,
+        language: int,
         timestamp_marker: int,
-        is_verbose_response: bool,
 ):
     """
-
-    :param audio:
-    :param sampling_rate:
-    :param timestamp_marker:
-    :param is_verbose_response:
-    :return:
+    Generate the right prompt with the specific parameters to submit for inference over Whisper
+    :param audio: PCM data containing audio signal representation
+    :param sampling_rate: Number of samples in one second of audio
+    :param language: Token id representing the language of the audio content
+    :param timestamp_marker: Token id representing the temporal position within the audio content for this segment
+    :return: Dictionary with all the prefilled value to call `generate`
     """
-    # TODO: We assume english for now
-    k_english_token = 50259
-    k_timestamp_marker = f"<|{timestamp_marker if is_verbose_response else 0:.2f}|>"
-    k_timestamp_marker_token = 50365
-
     return {
         "encoder_prompt": {
             "prompt": "",
             "multi_modal_data": {"audio": (audio, sampling_rate)},
         },
         "decoder_prompt": {
-            # <|startoftranscript|><|{request.language}|><|transcribe|>{timestamp_marker}
             "prompt_token_ids": [
                 50258,
-                k_english_token,
+                language,
                 50360,
-                k_timestamp_marker_token,
+                timestamp_marker,
             ]
         },
     }
@@ -258,10 +252,22 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
             params: "SamplingParams"
     ) -> (List[Segment], str):
         async def __agenerate__(request_id: str, prompt, params):
+            """
+            Helper method to unroll asynchronous generator and return the last element
+            :param request_id: Unique identifier for this request
+            :param prompt: The prompt to submit for inference on vLLM through `generate(...)`
+            :param params: The parameters passed along with the prompt for inference on vLLM through `generate(...)`
+            :return: `CompletionOutput`
+            """
             # Submit for inference on the segment & keep track of the background task
             async for step in self._engine.generate(prompt, params, request_id):
                 pass
             return step
+
+        # Wrap tokenizer results with LRU cache to avoid vocabulary lookup
+        convert_tokens_to_ids = lru_cache(tokenizer.convert_tokens_to_ids)
+
+        # f"<|{timestamp_marker if is_verbose_response else 0:.2f}|>"
 
         coro_handles = []
         for audio_chunk_id, audio_chunk in enumerate(audio_chunks):
@@ -272,7 +278,10 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
             timestamp = audio_chunk_id * WhisperHandler.WHISPER_SEGMENT_DURATION_SEC
 
             # Compute initial prompt for the segment
-            prompt = create_prompt(audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, timestamp, request)
+            is_verbose = request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
+            language = convert_tokens_to_ids(f"<|{request.language}|>")
+            timestamp = convert_tokens_to_ids(f"<|{timestamp:.2f}|>" if is_verbose else '<|notimestamps|>')
+            prompt = create_prompt(audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, language, timestamp)
 
             # Submit the task
             coro_handles += [asyncio.create_task(__agenerate__(request_id, prompt, params))]
@@ -328,7 +337,7 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                             VerboseTranscription(
                                 text=text,
                                 duration=get_duration(y=waveform, sr=sampling),
-                                language="en",
+                                language=request.language,
                                 segments=segments,
                                 # word=None
                             )
