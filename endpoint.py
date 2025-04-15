@@ -130,7 +130,7 @@ def process_chunk(
         timestamp_offset: int,
 ) -> Generator:
     # Some constants
-    k_timestamp_token = lru_cache(tokenizer.convert_tokens_to_ids)("<|0.00|>")
+    k_timestamp_token = lru_cache(tokenizer.convert_tokens_to_ids)(f"<|0.00|>")
 
     # Detect start of transcript token
     # sot_mask = ids == k_sot_token
@@ -280,7 +280,7 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
             # Compute initial prompt for the segment
             is_verbose = request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
             language = convert_tokens_to_ids(f"<|{request.language}|>")
-            timestamp = convert_tokens_to_ids(f"<|{timestamp:.2f}|>" if is_verbose else '<|notimestamps|>')
+            timestamp = convert_tokens_to_ids(f"<|0.00|>" if is_verbose else '<|notimestamps|>')
             prompt = create_prompt(audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, language, timestamp)
 
             # Submit the task
