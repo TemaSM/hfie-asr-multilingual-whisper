@@ -10,4 +10,4 @@ COPY endpoint.py /opt/endpoints/
 EXPOSE 8000
 
 ENTRYPOINT ["python3"]
-CMD ["/opt/endpoints/endpoint.py"]
+CMD ["/opt/endpoints/handler.py"]
