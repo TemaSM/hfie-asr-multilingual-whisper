@@ -1,4 +1,4 @@
-FROM vllm/vllm-openai:v0.8.3
+FROM vllm/vllm-openai:v0.8.4
 
 RUN --mount=type=bind,from=huggingface/endpoints-sdk:v1.0.0-beta-py312-manylinux,source=/opt/endpoints/dist,target=/opt/endpoints/dist \
     --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
