@@ -1,4 +1,5 @@
 import asyncio
+import os
 import zlib
 from functools import lru_cache
 from io import BytesIO
@@ -373,10 +374,13 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
 
 
 def entrypoint():
+    interface = int(os.environ.get("HFENDPOINT_INTERFACE", "0.0.0.0"))
+    port = int(os.environ.get("HFENDPOINT_PORT", "8000"))
+
     endpoint = AutomaticSpeechRecognitionEndpoint(
         WhisperHandler("openai/whisper-large-v3")
     )
-    run(endpoint, "0.0.0.0", 8000)
+    run(endpoint, interface, port)
 
 
 if __name__ == "__main__":
