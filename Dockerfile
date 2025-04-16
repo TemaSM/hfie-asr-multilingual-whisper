@@ -5,7 +5,7 @@ RUN --mount=type=bind,from=huggingface/endpoints-sdk:v1.0.0-beta-py312-manylinux
     python3 -m pip install -r /tmp/requirements.txt && \
     python3 -m pip install /opt/endpoints/dist/*.whl
 
-COPY endpoint.py /opt/endpoints/
+COPY handler.py /opt/endpoints/
 
 ENV HFENDPOINT_INTERFACE 0.0.0.0
 ENV HFENDPOINT_PORT 80
