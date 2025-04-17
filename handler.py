@@ -1,11 +1,12 @@
 import asyncio
-import os
 import zlib
 from functools import lru_cache
 from io import BytesIO
+from pathlib import Path
 from typing import Sequence, List, Tuple, Generator, Iterable, TYPE_CHECKING
 
 import numpy as np
+from hfendpoints.errors.config import UnsupportedModelArchitecture
 from hfendpoints.openai import Context, run
 from hfendpoints.openai.audio import (
     AutomaticSpeechRecognitionEndpoint,
@@ -19,22 +20,25 @@ from hfendpoints.openai.audio import (
 )
 from librosa import load as load_audio, get_duration
 from loguru import logger
+from transformers import AutoConfig
 from vllm import (
     AsyncEngineArgs,
     AsyncLLMEngine,
     SamplingParams,
 )
 
-from hfendpoints import Handler
+from hfendpoints import EndpointConfig, Handler, ensure_supported_architectures
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
     from vllm import CompletionOutput, RequestOutput
     from vllm.sequence import SampleLogprobs
 
+SUPPORTED_MODEL_ARCHITECTURES = ["WhisperForConditionalGeneration"]
+
 
 def chunk_audio_with_duration(
-        audio: np.ndarray, maximum_duration_sec: int, sampling_rate: int
+    audio: np.ndarray, maximum_duration_sec: int, sampling_rate: int
 ) -> Sequence[np.ndarray]:
     """
     Chunk a mono audio timeseries so that each chunk is as long as `maximum_duration_sec`.
@@ -63,10 +67,10 @@ def compression_ratio(text: str) -> float:
 
 
 def create_prompt(
-        audio: np.ndarray,
-        sampling_rate: int,
-        language: int,
-        timestamp_marker: int,
+    audio: np.ndarray,
+    sampling_rate: int,
+    language: int,
+    timestamp_marker: int,
 ):
     """
     Generate the right prompt with the specific parameters to submit for inference over Whisper
@@ -93,7 +97,7 @@ def create_prompt(
 
 
 def create_params(
-        max_tokens: int, temperature: float, is_verbose: bool
+    max_tokens: int, temperature: float, is_verbose: bool
 ) -> "SamplingParams":
     """
     Create sampling parameters to submit for inference through vLLM `generate`
@@ -123,12 +127,12 @@ def get_avg_logprob(logprobs: "SampleLogprobs") -> float:
 
 
 def process_chunk(
-        tokenizer: "PreTrainedTokenizer",
-        ids: np.ndarray,
-        logprobs: "SampleLogprobs",
-        request: TranscriptionRequest,
-        segment_offset: int,
-        timestamp_offset: int,
+    tokenizer: "PreTrainedTokenizer",
+    ids: np.ndarray,
+    logprobs: "SampleLogprobs",
+    request: TranscriptionRequest,
+    segment_offset: int,
+    timestamp_offset: int,
 ) -> Generator:
     """
     Decode a single transcribed audio chunk and generates all the segments associated
@@ -198,9 +202,9 @@ def process_chunk(
 
 
 def process_chunks(
-        tokenizer: "PreTrainedTokenizer",
-        chunks: List["RequestOutput"],
-        request: TranscriptionRequest,
+    tokenizer: "PreTrainedTokenizer",
+    chunks: List["RequestOutput"],
+    request: TranscriptionRequest,
 ) -> Tuple[List[Segment], str]:
     """
     Iterate over all the audio chunk's outputs and consolidates outputs as segment(s) whether the response is verbose or not
@@ -223,7 +227,7 @@ def process_chunks(
         logprobs = generation.logprobs
 
         for segment, _is_continuation in process_chunk(
-                tokenizer, ids, logprobs, request, segment_offset, time_offset
+            tokenizer, ids, logprobs, request, segment_offset, time_offset
         ):
             materialized_segments.append(segment)
 
@@ -258,17 +262,17 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                 enforce_eager=False,
                 enable_prefix_caching=True,
                 max_logprobs=1,  # TODO(mfuntowicz) : Set from config?
-                disable_log_requests=True
+                disable_log_requests=True,
             )
         )
 
     async def transcribe(
-            self,
-            ctx: Context,
-            request: TranscriptionRequest,
-            tokenizer: "PreTrainedTokenizer",
-            audio_chunks: Iterable[np.ndarray],
-            params: "SamplingParams",
+        self,
+        ctx: Context,
+        request: TranscriptionRequest,
+        tokenizer: "PreTrainedTokenizer",
+        audio_chunks: Iterable[np.ndarray],
+        params: "SamplingParams",
     ) -> (List[Segment], str):
         async def __agenerate__(request_id: str, prompt, params):
             """
@@ -319,14 +323,14 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
         return segments, text
 
     async def __call__(
-            self, request: TranscriptionRequest, ctx: Context
+        self, request: TranscriptionRequest, ctx: Context
     ) -> TranscriptionResponse:
         with logger.contextualize(request_id=ctx.request_id):
             with memoryview(request) as audio:
 
                 # Check if we need to enable the verbose path
                 is_verbose = (
-                        request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
+                    request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
                 )
 
                 # Retrieve the tokenizer and model config asynchronously while we decode audio
@@ -375,14 +379,22 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
 
 
 def entrypoint():
-    interface = os.environ.get("HFENDPOINT_INTERFACE", "0.0.0.0")
-    port = int(os.environ.get("HFENDPOINT_PORT", "8000"))
+    # Retrieve endpoint configuration
+    endpoint_config = EndpointConfig.from_env()
 
+    # Ensure the model is compatible is pre-downloaded
+    if (model_local_path := Path(endpoint_config.model_id)).exists():
+        if (config_local_path := (model_local_path / "config.json")).exists():
+            config = AutoConfig.from_pretrained(config_local_path)
+            ensure_supported_architectures(config, SUPPORTED_MODEL_ARCHITECTURES)
+
+    # Initialize the endpoint
     endpoint = AutomaticSpeechRecognitionEndpoint(
-        WhisperHandler("openai/whisper-large-v3")
+        WhisperHandler(endpoint_config.model_id)
     )
 
-    run(endpoint, interface, port)
+    # Serve the model
+    run(endpoint, endpoint_config.interface, endpoint_config.port)
 
 
 if __name__ == "__main__":
