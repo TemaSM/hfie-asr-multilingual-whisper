@@ -94,7 +94,7 @@ def create_prompt(
 
 def create_params(
         max_tokens: int, temperature: float, is_verbose: bool
-) -> SamplingParams:
+) -> "SamplingParams":
     """
     Create sampling parameters to submit for inference through vLLM `generate`
     :param max_tokens: Maximum number of tokens to generate
@@ -380,6 +380,7 @@ def entrypoint():
     endpoint = AutomaticSpeechRecognitionEndpoint(
         WhisperHandler("openai/whisper-large-v3")
     )
+
     run(endpoint, interface, port)
 
 
