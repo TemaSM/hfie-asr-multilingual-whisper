@@ -258,6 +258,7 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
                 enforce_eager=False,
                 enable_prefix_caching=True,
                 max_logprobs=1,  # TODO(mfuntowicz) : Set from config?
+                disable_log_requests=True
             )
         )
 
