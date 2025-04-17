@@ -5,12 +5,11 @@ base_model:
 - openai/whisper-large-v3
 tags:
 - inference_endpoints
-- openai
 - audio
 - transcription
 ---
 
-# Inference Endpoint - OpenAI Whisper Large V3
+# Inference Endpoint - Multilingual Audio Transcription with Whisper models
 
 **Deploy OpenAI's Whisper Inference Endpoint to transcribe audio files to text in many languages**
 
@@ -65,7 +64,4 @@ curl http://localhost:8000/api/v1/audio/transcriptions \
 | Compute data type  | `bfloat16`            | Computations (matmuls, norms, etc.) are done using `bfloat16` precision                                    |
 | KV cache data type | `float8` (e4m3)       | Key-Value cache is stored on the GPU using `float8` (`float8_e4m3`) precision to save space                |
 | PyTorch Compile    | ✅                    | Enable the use of `torch.compile` to further optimize model's execution with more optimizations            |
-| CUDA Graphs        | ✅                    | Enable the use of so called "[CUDA Graphs](https://developer.nvidia.com/blog/cuda-graphs/)" to reduce overhead executing GPU computations | 
-
-
-
+| CUDA Graphs        | ✅                    | Enable the use of so called "[CUDA Graphs](https://developer.nvidia.com/blog/cuda-graphs/)" to reduce overhead executing GPU computations |
