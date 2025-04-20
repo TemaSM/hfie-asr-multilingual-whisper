@@ -7,8 +7,8 @@ RUN --mount=type=bind,from=huggingface/endpoints-sdk:v1.0.0-beta-py312-manylinux
 
 COPY handler.py /opt/endpoints/
 
-ENV HFENDPOINT_INTERFACE=0.0.0.0
-ENV HFENDPOINT_PORT=80
+ENV INTERFACE=0.0.0.0
+ENV PORT=80
 
 EXPOSE 80
 ENTRYPOINT ["python3"]

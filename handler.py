@@ -38,7 +38,7 @@ SUPPORTED_MODEL_ARCHITECTURES = ["WhisperForConditionalGeneration"]
 
 
 def chunk_audio_with_duration(
-    audio: np.ndarray, maximum_duration_sec: int, sampling_rate: int
+        audio: np.ndarray, maximum_duration_sec: int, sampling_rate: int
 ) -> Sequence[np.ndarray]:
     """
     Chunk a mono audio timeseries so that each chunk is as long as `maximum_duration_sec`.
@@ -67,10 +67,10 @@ def compression_ratio(text: str) -> float:
 
 
 def create_prompt(
-    audio: np.ndarray,
-    sampling_rate: int,
-    language: int,
-    timestamp_marker: int,
+        audio: np.ndarray,
+        sampling_rate: int,
+        language: int,
+        timestamp_marker: int,
 ):
     """
     Generate the right prompt with the specific parameters to submit for inference over Whisper
@@ -97,7 +97,7 @@ def create_prompt(
 
 
 def create_params(
-    max_tokens: int, temperature: float, is_verbose: bool
+        max_tokens: int, temperature: float, is_verbose: bool
 ) -> "SamplingParams":
     """
     Create sampling parameters to submit for inference through vLLM `generate`
@@ -127,12 +127,12 @@ def get_avg_logprob(logprobs: "SampleLogprobs") -> float:
 
 
 def process_chunk(
-    tokenizer: "PreTrainedTokenizer",
-    ids: np.ndarray,
-    logprobs: "SampleLogprobs",
-    request: TranscriptionRequest,
-    segment_offset: int,
-    timestamp_offset: int,
+        tokenizer: "PreTrainedTokenizer",
+        ids: np.ndarray,
+        logprobs: "SampleLogprobs",
+        request: TranscriptionRequest,
+        segment_offset: int,
+        timestamp_offset: int,
 ) -> Generator:
     """
     Decode a single transcribed audio chunk and generates all the segments associated
@@ -202,9 +202,9 @@ def process_chunk(
 
 
 def process_chunks(
-    tokenizer: "PreTrainedTokenizer",
-    chunks: List["RequestOutput"],
-    request: TranscriptionRequest,
+        tokenizer: "PreTrainedTokenizer",
+        chunks: List["RequestOutput"],
+        request: TranscriptionRequest,
 ) -> Tuple[List[Segment], str]:
     """
     Iterate over all the audio chunk's outputs and consolidates outputs as segment(s) whether the response is verbose or not
@@ -227,7 +227,7 @@ def process_chunks(
         logprobs = generation.logprobs
 
         for segment, _is_continuation in process_chunk(
-            tokenizer, ids, logprobs, request, segment_offset, time_offset
+                tokenizer, ids, logprobs, request, segment_offset, time_offset
         ):
             materialized_segments.append(segment)
 
@@ -267,12 +267,12 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
         )
 
     async def transcribe(
-        self,
-        ctx: Context,
-        request: TranscriptionRequest,
-        tokenizer: "PreTrainedTokenizer",
-        audio_chunks: Iterable[np.ndarray],
-        params: "SamplingParams",
+            self,
+            ctx: Context,
+            request: TranscriptionRequest,
+            tokenizer: "PreTrainedTokenizer",
+            audio_chunks: Iterable[np.ndarray],
+            params: "SamplingParams",
     ) -> (List[Segment], str):
         async def __agenerate__(request_id: str, prompt, params):
             """
@@ -323,14 +323,14 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
         return segments, text
 
     async def __call__(
-        self, request: TranscriptionRequest, ctx: Context
+            self, request: TranscriptionRequest, ctx: Context
     ) -> TranscriptionResponse:
         with logger.contextualize(request_id=ctx.request_id):
             with memoryview(request) as audio:
 
                 # Check if we need to enable the verbose path
                 is_verbose = (
-                    request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
+                        request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
                 )
 
                 # Retrieve the tokenizer and model config asynchronously while we decode audio
@@ -376,6 +376,9 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
 
                     case TranscriptionResponseKind.TEXT:
                         return TranscriptionResponse.text(text)
+
+                # I don't forsee any case this would happen but at least we are safe
+                raise ValueError(f"Invalid response_kind ({request.response_kind})")
 
 
 def entrypoint():
