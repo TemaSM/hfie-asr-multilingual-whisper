@@ -1,6 +1,8 @@
-FROM vllm/vllm-openai:v0.8.4
+ARG SDK_VERSION=latest
+FROM huggingface/hfendpoints-sdk:${SDK_VERSION} AS sdk
 
-RUN --mount=type=bind,from=huggingface/hfendpoints-sdk:v1.0.0-beta-py312-manylinux,source=/usr/local/hfendpoints/dist,target=/usr/local/hfendpoints/dist \
+FROM vllm/vllm-openai:v0.8.4
+RUN --mount=type=bind,from=sdk,source=/usr/local/hfendpoints/dist,target=/usr/local/hfendpoints/dist \
     --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
     python3 -m pip install -r /tmp/requirements.txt && \
     python3 -m pip install /usr/local/hfendpoints/dist/*.whl
