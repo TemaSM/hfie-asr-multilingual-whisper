@@ -1,0 +1,7 @@
+{
+    "id": "deploy-whisper-vllm-gpu",
+    "description": "Build and deploy vLLM based Whisper on Inference Endpoint",
+    "dockerfile": "Dockerfile",
+    "hardware": "l4x1",
+    "command": "python -m pytest --import-mode importlib tests/"
+}
