@@ -23,13 +23,13 @@ from openai import OpenAI
 client = OpenAI(api_key=ENDPOINT_API_KEY, base_url=ENDPOINT_URL)
 
 
+@pytest.fixture
 def dataset():
     dataset = load_dataset("hf-audio/esb-datasets-test-only-sorted", "ami", split="test")
     return dataset.take(ENDPOINT_NUM_SAMPLES)
 
 
-@pytest.fixture
-@pytest.mark.parametrize({"response_format": ["text", "json", "verbose_json"]})
+@pytest.mark.parametrize("response_format", ["text", "json", "verbose_json"])
 def test_seq_openai_client_no_params(dataset: Dataset, response_format: str):
     try:
         for sample in dataset:
@@ -50,8 +50,7 @@ def test_seq_openai_client_no_params(dataset: Dataset, response_format: str):
         assert False, f"Caught error while sending audio/transcriptions request: {e}"
 
 
-@pytest.fixture
-@pytest.mark.parametrize({"response_format": ["text", "json", "verbose_json"]})
+@pytest.mark.parametrize("response_format", ["text", "json", "verbose_json"])
 def test_seq_openai_client_temperature(dataset: Dataset, response_format: str):
     try:
         for sample in dataset:
