@@ -1,0 +1,5 @@
+datasets>=3.5.0
+numpy>=2.0.0
+openai>=1.70.0
+soundfile>=0.13.0
+pytest>=8.0.0
