@@ -1,5 +1,6 @@
 {
     "id": "deploy-whisper-vllm-gpu",
     "description": "Build and deploy vLLM based Whisper on Inference Endpoint",
-    "hardware": "l4x1"
+    "hardware": "l4x1",
+    "model": "openai/whisper-large-v3-turbo"
 }
