@@ -17,4 +17,4 @@ WORKDIR /opt/endpoint
 COPY tests/ tests/.
 
 ENTRYPOINT ["pytest"]
-CMD ["-v", "--import-mode", "importlib", "tests"]
+CMD ["-p", "no:cacheprovider", "--import-mode", "importlib", "tests"]
