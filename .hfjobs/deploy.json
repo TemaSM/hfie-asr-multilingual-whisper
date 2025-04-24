@@ -1,6 +1,7 @@
 {
     "id": "deploy-whisper-vllm-gpu",
     "description": "Build and deploy vLLM based Whisper on Inference Endpoint",
-    "hardware": "l4x1",
+    "instance_type": "nvidia-l4",
+    "instance_size": "x1",
     "model": "openai/whisper-large-v3-turbo"
 }
