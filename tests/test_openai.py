@@ -7,7 +7,6 @@ import soundfile as sf
 import pytest
 
 # Global variables defining endpoint targets
-ENDPOINT_API_KEY = environ["ENDPOINT_API_KEY"]
 ENDPOINT_URL = environ["ENDPOINT_URL"]
 ENDPOINT_NUM_SAMPLES = int(environ["ENDPOINT_NUM_SAMPLES"])
 ENDPOINT_TEST_SEED = int(environ["ENDPOINT_TEST_SEED"])
@@ -20,7 +19,7 @@ from datasets import load_dataset, Dataset
 from openai import OpenAI
 
 # Global client to make requests
-client = OpenAI(api_key=ENDPOINT_API_KEY, base_url=ENDPOINT_URL)
+client = OpenAI(base_url=ENDPOINT_URL)
 
 
 @pytest.fixture
