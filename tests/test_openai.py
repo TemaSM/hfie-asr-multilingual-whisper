@@ -35,7 +35,7 @@ def test_seq_openai_client_no_params(dataset: Dataset, response_format: str):
             with BytesIO() as audio_buffer:
                 sf.write(audio_buffer, sample["audio"]["array"], sample["audio"]["sampling_rate"], format="WAV")
                 response = client.audio.transcriptions.create(
-                    file=audio_buffer, model="whisper-1", response_format=response_format
+                    file=audio_buffer, model="", response_format=response_format
                 )
 
                 if response_format == "verbose_json":
@@ -57,7 +57,7 @@ def test_seq_openai_client_temperature(dataset: Dataset, response_format: str):
                 sf.write(audio_buffer, sample["audio"]["array"], sample["audio"]["sampling_rate"], format="WAV")
                 response = client.audio.transcriptions.create(
                     file=audio_buffer,
-                    model="whisper-1",
+                    model="",
                     temperature=1.0,
                     response_format=response_format
                 )
