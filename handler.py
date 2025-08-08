@@ -4,6 +4,7 @@ from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Sequence, List, Tuple, Generator, Iterable, TYPE_CHECKING
+import os
 
 import numpy as np
 from hfendpoints.errors.config import UnsupportedModelArchitecture
@@ -26,6 +27,7 @@ from vllm import (
     AsyncLLMEngine,
     SamplingParams,
 )
+import torch
 
 from hfendpoints import EndpointConfig, Handler, ensure_supported_architectures
 
@@ -144,15 +146,13 @@ def process_chunk(
     :param timestamp_offset:
     :return:
     """
-    # Some constants
-    k_timestamp_token = lru_cache(tokenizer.convert_tokens_to_ids)(f"<|0.00|>")
+    vocab = tokenizer.get_vocab() if hasattr(tokenizer, "get_vocab") else {}
+    k_timestamp_token = vocab.get("<|0.00|>")
 
-    # Detect start of transcript token
-    # sot_mask = ids == k_sot_token
-
-    # Timestamps are expected to have ids greater than token_id(<|0.00|>)
-    # We create a mask for all the potential tokens which are >= token_id(<|0.00|>)
-    timestamps_mask = ids >= k_timestamp_token
+    # Create timestamp mask only if timestamp token exists in vocab
+    timestamps_mask = np.zeros_like(ids, dtype=bool)
+    if k_timestamp_token is not None:
+        timestamps_mask = ids >= k_timestamp_token
 
     if np.any(timestamps_mask):
         # If we have a timestamp token, we need to check whether it's a final token or a final then the next
@@ -163,7 +163,12 @@ def process_chunk(
         slice_start = 0
 
         for t, position in enumerate(np.flatnonzero(timestamps_mask)):
-            timestamp = float(tokenizer.convert_ids_to_tokens([ids[position]])[0][2:-2])
+            tok = tokenizer.convert_ids_to_tokens([ids[position]])[0]
+            try:
+                token_inner = tok[2:-2] if tok.startswith("<|") and tok.endswith("|>") else ""
+                timestamp = float(token_inner)
+            except Exception:
+                continue
 
             if t % 2 == 0:
                 timestamp_end = timestamp
@@ -244,24 +249,56 @@ def process_chunks(
 
 
 class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
-    WHISPER_SEGMENT_DURATION_SEC = 30
-    WHISPER_SAMPLING_RATE = 22050
+    WHISPER_SEGMENT_DURATION_SEC = int(os.getenv("WHISPER_SEGMENT_DURATION_SEC", "30"))
+    WHISPER_SAMPLING_RATE = int(os.getenv("WHISPER_SAMPLING_RATE", "16000"))
 
     __slots__ = ("_engine",)
 
     def __init__(self, model_id_or_path: str):
         super().__init__(model_id_or_path)
+        env_dtype_raw = (os.getenv("DTYPE") or os.getenv("VLLM_DTYPE") or "").lower().strip()
+        def _normalize_dtype(value: str) -> str:
+            if value in ("half", "fp16", "float16"):
+                return "half"
+            if value in ("bfloat16", "bf16"):
+                return "bfloat16"
+            return ""
+
+        dtype = _normalize_dtype(env_dtype_raw)
+        if not dtype:
+            major, _ = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
+            dtype = "bfloat16" if major >= 8 else "half"
+
+        def _normalize_kv_dtype(value: str) -> str:
+            v = (value or "").lower().strip()
+            if v in ("half", "fp16", "float16"):
+                return "float16"
+            if v in ("fp32", "float32"):
+                return "float32"
+            if v in ("fp8", "float8", "e4m3", "e5m2"):
+                return "fp8"
+            if v == "auto":
+                return "auto"
+            return ""
+
+        kv_cache_dtype = _normalize_kv_dtype(os.getenv("VLLM_KV_CACHE_DTYPE") or "float16")
+        if not kv_cache_dtype:
+            kv_cache_dtype = "float16"
+
+        self.language_force = os.getenv("LANGUAGE_FORCE")
+        self.timestamps_mode = (os.getenv("TIMESTAMPS") or "auto").lower().strip()
+        self.max_audio_seconds = int(os.getenv("MAX_AUDIO_SECONDS", "0"))
 
         self._engine = AsyncLLMEngine.from_engine_args(
             AsyncEngineArgs(
                 model_id_or_path,
                 task="transcription",
                 device="auto",
-                dtype="bfloat16",
-                kv_cache_dtype="fp8",
+                dtype=dtype,
+                kv_cache_dtype=kv_cache_dtype,
                 enforce_eager=False,
                 enable_prefix_caching=True,
-                max_logprobs=1,  # TODO(mfuntowicz) : Set from config?
+                max_logprobs=1,
                 disable_log_requests=True,
             )
         )
@@ -273,7 +310,7 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
             tokenizer: "PreTrainedTokenizer",
             audio_chunks: Iterable[np.ndarray],
             params: "SamplingParams",
-    ) -> (List[Segment], str):
+    ) -> Tuple[List[Segment], str]:
         async def __agenerate__(request_id: str, prompt, params):
             """
             Helper method to unroll asynchronous generator and return the last element
@@ -300,10 +337,15 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
 
             # Compute initial prompt for the segment
             is_verbose = request.response_kind == TranscriptionResponseKind.VERBOSE_JSON
-            language = convert_tokens_to_ids(f"<|{request.language}|>")
-            timestamp = convert_tokens_to_ids(
-                f"<|0.00|>" if is_verbose else "<|notimestamps|>"
-            )
+            lang_tag = self.language_force or request.language
+            language = convert_tokens_to_ids(f"<|{lang_tag}|>")
+            if self.timestamps_mode == "none":
+                ts_token = "<|notimestamps|>"
+            elif self.timestamps_mode == "segments":
+                ts_token = "<|0.00|>"
+            else:
+                ts_token = "<|0.00|>" if is_verbose else "<|notimestamps|>"
+            timestamp = convert_tokens_to_ids(ts_token)
             prompt = create_prompt(
                 audio_chunk, WhisperHandler.WHISPER_SAMPLING_RATE, language, timestamp
             )
@@ -339,10 +381,14 @@ class WhisperHandler(Handler[TranscriptionRequest, TranscriptionResponse]):
 
                 # Decode audio from librosa (for now)
                 # TODO: Use native (Rust provided) decoding
-                (waveform, sampling) = load_audio(BytesIO(audio), sr=22050, mono=True)
+                (waveform, sampling) = load_audio(BytesIO(audio), sr=self.WHISPER_SAMPLING_RATE, mono=True)
                 logger.debug(
                     f"Successfully decoded {len(waveform)} bytes PCM audio chunk"
                 )
+
+                if self.max_audio_seconds > 0:
+                    if get_duration(y=waveform, sr=sampling) > self.max_audio_seconds:
+                        return TranscriptionResponse.json({"error": "audio too long"})
 
                 # Create parameters
                 max_tokens = (await model_config).max_model_len - 4

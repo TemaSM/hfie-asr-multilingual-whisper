@@ -1,11 +1,17 @@
-ARG SDK_VERSION=latest
-FROM huggingface/hfendpoints-sdk:${SDK_VERSION} AS sdk
+ARG SDK_REGISTRY=huggingface
+ARG SDK_IMAGE=hfendpoints-sdk
+ARG SDK_VERSION=v0.2.0-patched
+FROM ${SDK_REGISTRY}/${SDK_IMAGE}:${SDK_VERSION} AS sdk
 
 FROM vllm/vllm-openai:v0.8.4
+ARG LABEL_SOURCE_URL="https://huggingface.co/TemaSM/hfie-asr-multilingual-whisper"
+ARG LABEL_DESCRIPTION="OpenAI-compatible Whisper ASR (vLLM 0.8.4), T4-friendly"
+LABEL org.opencontainers.image.source="${LABEL_SOURCE_URL}"
+LABEL org.opencontainers.image.description="${LABEL_DESCRIPTION}"
 RUN --mount=type=bind,from=sdk,source=/opt/hfendpoints/dist,target=/usr/local/endpoints/dist \
     --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
-    python3 -m pip install -r /tmp/requirements.txt && \
-    python3 -m pip install /usr/local/endpoints/dist/*.whl
+    python3 -m pip install --no-cache-dir -r /tmp/requirements.txt && \
+    python3 -m pip install --no-cache-dir /usr/local/endpoints/dist/*.whl
 
 COPY handler.py /usr/local/endpoint/
 
