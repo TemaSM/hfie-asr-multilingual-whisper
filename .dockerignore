@@ -1,0 +1,16 @@
+.git
+.github
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+*.ipynb
+.env
+dist/
+build/
+.vscode/
+.idea/
+
